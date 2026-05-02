@@ -1,16 +1,21 @@
-# Use Nginx to serve the static files
+# Multi-stage: compile Flutter web in the image (build/web is not in Git).
+# Stage 1 — Flutter web release build
+FROM ghcr.io/cirruslabs/flutter:stable AS build
+WORKDIR /app
+
+COPY pubspec.yaml pubspec.lock ./
+RUN flutter pub get
+
+COPY . .
+RUN flutter build web --release
+
+# Stage 2 — static hosting
 FROM nginx:alpine
 
-# Copy the build/web folder produced by scripts/build_web.ps1 or scripts/build_web.sh
-# (flutter build web --release). Flutter 3.29+ uses CanvasKit/Skwasm only; the legacy
-# HTML/DOM renderer is no longer available—see web/flutter_bootstrap.js and
-# https://docs.flutter.dev/platform-integration/web/renderers
-COPY build/web /usr/share/nginx/html
+COPY --from=build /app/build/web /usr/share/nginx/html
 
-# Expose port 8080 for Cloud Run
 EXPOSE 8080
 
-# Configure Nginx to listen on 8080
 RUN sed -i 's/listen\(.*\)80;/listen 8080;/' /etc/nginx/conf.d/default.conf
 
 CMD ["nginx", "-g", "daemon off;"]
