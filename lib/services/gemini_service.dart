@@ -34,13 +34,20 @@ class GeminiService {
       'https://lh3.googleusercontent.com/aida-public/AB6AXuB987vgoLrCvkIeqXUhwjqQovW76SroqevfrS5iSFtyAG4DOa9egIXVYaa1xam_8RfPeYvJNqYgBT3_F8C9fL5vRWwQa9SAwXZUNpzz0nLYlUNMNDkxUT-vUld-J-tDOMhnwEekLB8lM-nnK5ANaTuunhX6AhCK9Vg1tAKppGpUw2pI_kQmE7zqax_HWv5ILWVqSLCbXr4De2_jwlwtpdWvx5W2jyujnzdXcceE4g1fIQTSsVqhTavMKTL_k2T272DBk3V8ryAFuNc';
 
   String _requireApiKey() {
+    const String fromDefine =
+        String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
+    final String trimmedDefine = fromDefine.trim();
+    if (trimmedDefine.isNotEmpty && trimmedDefine != 'your_key_here') {
+      return trimmedDefine;
+    }
     if (!dotenv.isInitialized) {
       throw StateError('dotenv not loaded; call dotenv.load in main() first.');
     }
     final String? key = dotenv.maybeGet('GEMINI_API_KEY')?.trim();
     if (key == null || key.isEmpty || key == 'your_key_here') {
       throw StateError(
-        'Set GEMINI_API_KEY in assets/.env (not your_key_here placeholder).',
+        'Set GEMINI_API_KEY in assets/.env for local dev, or build with '
+        '--dart-define=GEMINI_API_KEY=... (e.g. Docker build-arg for production).',
       );
     }
     return key;

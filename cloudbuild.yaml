@@ -1,0 +1,46 @@
+# 1) Access the secret from Secret Manager
+availableSecrets:
+  secretManager:
+    - versionName: projects/378480318821/secrets/GEMINI_API_KEY/versions/latest
+      env: 'API_KEY'
+
+steps:
+  # STEP 1: Build the Docker image with the API Key injected
+  - id: docker-build
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker build \
+          --build-arg GEMINI_API_KEY=$$API_KEY \
+          -t gcr.io/$PROJECT_ID/ingridio:$SHORT_SHA \
+          .
+    secretEnv: ['API_KEY']
+
+  # STEP 2: Push the image to Google Container Registry
+  - id: docker-push
+    name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/ingridio:$SHORT_SHA']
+
+  # STEP 3: Deploy to Cloud Run (This makes the changes LIVE)
+  - id: deploy-live
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ingridio' # Replace with your actual Cloud Run service name
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/ingridio:$SHORT_SHA'
+      - '--region'
+      - 'europe-west1' # Replace with your actual region
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/$PROJECT_ID/ingridio:$SHORT_SHA'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
