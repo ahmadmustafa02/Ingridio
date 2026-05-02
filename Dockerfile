@@ -7,6 +7,8 @@ COPY pubspec.yaml pubspec.lock ./
 RUN flutter pub get
 
 COPY . .
+# pubspec lists assets/.env; it is gitignored locally so Cloud Build has no file unless we add one.
+RUN printf 'GEMINI_API_KEY=\n' > assets/.env
 RUN flutter build web --release
 
 # Stage 2 — static hosting
