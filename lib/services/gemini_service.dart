@@ -17,40 +17,39 @@ class GeminiService {
 
   static const String _visionPrompt =
       "Analyze this image and identify all visible food ingredients. Then suggest 3 recipes using these ingredients. Return ONLY valid JSON in this format:\n"
-      "     {\n"
-      "       'detected_ingredients': ['item1', 'item2'],\n"
-      "       'recipes': [{\n"
-      "         'name': '',\n"
-      "         'match_percentage': 0,\n"
-      "         'prep_time': '',\n"
-      "         'calories': 0,\n"
-      "         'ingredients': [{'name': '', 'amount': '', 'have_it': true}],\n"
-      "         'steps': [{'step_number': 1, 'instruction': '', 'duration_seconds': 0}],\n"
-      "         'tags': []\n"
-      "       }]\n"
-      "     }";
+      "      {\n"
+      "        'detected_ingredients': ['item1', 'item2'],\n"
+      "        'recipes': [{\n"
+      "          'name': '',\n"
+      "          'match_percentage': 0,\n"
+      "          'prep_time': '',\n"
+      "          'calories': 0,\n"
+      "          'ingredients': [{'name': '', 'amount': '', 'have_it': true}],\n"
+      "          'steps': [{'step_number': 1, 'instruction': '', 'duration_seconds': 0}],\n"
+      "          'tags': []\n"
+      "        }]\n"
+      "      }";
 
   static const String _placeholderRecipeImageUrl =
       'https://lh3.googleusercontent.com/aida-public/AB6AXuB987vgoLrCvkIeqXUhwjqQovW76SroqevfrS5iSFtyAG4DOa9egIXVYaa1xam_8RfPeYvJNqYgBT3_F8C9fL5vRWwQa9SAwXZUNpzz0nLYlUNMNDkxUT-vUld-J-tDOMhnwEekLB8lM-nnK5ANaTuunhX6AhCK9Vg1tAKppGpUw2pI_kQmE7zqax_HWv5ILWVqSLCbXr4De2_jwlwtpdWvx5W2jyujnzdXcceE4g1fIQTSsVqhTavMKTL_k2T272DBk3V8ryAFuNc';
 
-String _requireApiKey() {
+  String _requireApiKey() {
+    // 1. Try to get the key from the build environment (dart-define)
     const String fromDefine =
         String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
-    final String trimmedDefine = fromDefine.trim();
-    if (trimmedDefine.isNotEmpty && trimmedDefine != 'your_key_here') {
-      return trimmedDefine;
+    if (fromDefine.isNotEmpty && fromDefine != 'your_key_here') {
+      return fromDefine.trim();
     }
-    if (!dotenv.isInitialized) {
-      throw StateError('dotenv not loaded; call dotenv.load in main() first.');
-    }
+
+    // 2. Try to get the key from .env file
     final String? key = dotenv.maybeGet('GEMINI_API_KEY')?.trim();
-    if (key == null || key.isEmpty || key == 'your_key_here') {
-      throw StateError(
-        'Set GEMINI_API_KEY in assets/.env for local dev, or build with '
-        '--dart-define=GEMINI_API_KEY=... (e.g. Docker build-arg for production).',
-      );
+    if (key != null && key.isNotEmpty && key != 'your_key_here') {
+      return key;
     }
-    return key;
+
+    // Instead of throwing an error, we return an empty string
+    // to handle it gracefully in analyzeImageBytes.
+    return "";
   }
 
   Future<FoodVisionResult> analyzeXFile(XFile image) async {
@@ -63,35 +62,55 @@ String _requireApiKey() {
     Uint8List bytes, {
     String mimeType = 'image/jpeg',
   }) async {
-    final GenerativeModel model = GenerativeModel(
-      model: _modelName,
-      apiKey: _requireApiKey(),
-      generationConfig: GenerationConfig(
-        temperature: 0.4,
-        responseMimeType: 'application/json',
-      ),
-    );
+    try {
+      final String apiKey = _requireApiKey();
 
-    final GenerateContentResponse response = await model.generateContent(
-      <Content>[
-        Content.multi(<Part>[
-          TextPart(_visionPrompt),
-          DataPart(mimeType, bytes),
-        ]),
-      ],
-    );
+      // If key is empty, return a graceful error result instead of calling the model
+      if (apiKey.isEmpty) {
+        return FoodVisionResult(
+          detectedIngredientNames: ["API Key Issue: Key not found"],
+          recipes: [],
+          detectedIngredients: [],
+        );
+      }
 
-    final String? rawText = response.text;
-    if (rawText == null || rawText.trim().isEmpty) {
-      throw StateError('Gemini returned no text.');
+      final GenerativeModel model = GenerativeModel(
+        model: _modelName,
+        apiKey: apiKey,
+        generationConfig: GenerationConfig(
+          temperature: 0.4,
+          responseMimeType: 'application/json',
+        ),
+      );
+
+      final GenerateContentResponse response = await model.generateContent(
+        <Content>[
+          Content.multi(<Part>[
+            TextPart(_visionPrompt),
+            DataPart(mimeType, bytes),
+          ]),
+        ],
+      );
+
+      final String? rawText = response.text;
+      if (rawText == null || rawText.trim().isEmpty) {
+        throw Exception('Gemini returned no text.');
+      }
+
+      final Object? decoded = jsonDecode(_isolateJsonObject(rawText));
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Gemini JSON root is not an object.');
+      }
+
+      return _parseFoodVisionResult(decoded);
+    } catch (e) {
+      // Catch any error (including API issues) and return a peaceful fallback result
+      return FoodVisionResult(
+        detectedIngredientNames: ["API Error: ${e.toString()}"],
+        recipes: [],
+        detectedIngredients: [],
+      );
     }
-
-    final Object? decoded = jsonDecode(_isolateJsonObject(rawText));
-    if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('Gemini JSON root is not an object.');
-    }
-
-    return _parseFoodVisionResult(decoded);
   }
 
   static String _mimeTypeForPath(String path) {
